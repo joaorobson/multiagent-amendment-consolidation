@@ -1,1 +1,2 @@
-from .proposicao import Proposicao, Emenda, Relatorio, StatusEmenda
+from .proposicao import Proposicao, Relatorio
+from .emenda import Emenda, EdicaoEmenda, DeliberacaoEmenda, StatusEmenda

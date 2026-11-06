@@ -16,6 +16,12 @@ class FileDownloader:
 
         output_path = self.output_dir / filename
 
+        # Verifica se o arquivo já existe localmente
+        if output_path.exists():
+            print(f"[CACHE] O arquivo já existe, pulando download: {output_path}")
+            return output_path
+
+        print(f"[DOWNLOAD] Baixando: {url}")
         request = Request(
             url,
             headers={"User-Agent": "Mozilla/5.0"},
@@ -24,4 +30,5 @@ class FileDownloader:
         with urlopen(request) as response:
             output_path.write_bytes(response.read())
 
+        print(f"[DOWNLOAD] Salvo em: {output_path}")
         return output_path

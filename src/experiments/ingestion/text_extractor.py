@@ -32,7 +32,6 @@ class TextExtractor:
         print(f"[STORE] Arquivo salvo: {filepath}")
 
     def _ls_to_local_path(self, ls_path):
-
         prefix = "/data/local-files/?d="
         relative = ls_path.replace(prefix, "")
         local_path = os.path.join(self.document_root, relative)
@@ -44,7 +43,6 @@ class TextExtractor:
         return local_path
 
     def extract_page_with_ocr(self, page, zoom=3):
-
         print(f"[OCR] Renderizando página com zoom={zoom}")
 
         mat = fitz.Matrix(zoom, zoom)
@@ -69,6 +67,16 @@ class TextExtractor:
         Extrai o texto do PDF, permitindo excluir páginas por intervalos.
         Exemplo: pages_to_remove = [[3, 5], [8, 9]] (indexado a partir de 1).
         """
+        # Define o nome e o caminho esperado do arquivo de texto
+        txt_filename = os.path.splitext(filename)[0] + ".txt"
+        txt_filepath = os.path.join(self.txts_path, txt_filename)
+
+        # Verifica se o arquivo txt já existe
+        if os.path.exists(txt_filepath):
+            print(f"[CACHE] O arquivo já existe, pulando extração: {txt_filepath}")
+            with open(txt_filepath, "r", encoding="utf-8") as f:
+                return f.read()
+
         print(f"[PDF] Iniciando processamento de PDFs")
 
         filepath = os.path.join(self.pdfs_path, filename)
@@ -84,7 +92,6 @@ class TextExtractor:
         # VALIDAÇÃO E LÓGICA DE EXCLUSÃO DE PÁGINAS
         # -------------------------------------------------------------
         if pages_to_remove:
-            # Valida se é uma lista de listas com 2 membros cada
             if not isinstance(pages_to_remove, list):
                 raise TypeError("O parâmetro 'pages_to_remove' deve ser uma lista.")
             
@@ -97,7 +104,6 @@ class TextExtractor:
                 for p in range(inicio, fim + 1):
                     indices_para_remover.add(p - 1)  # Converte para índice 0
 
-            # Ordena em ordem decrescente para deletar sem bagunçar os índices
             indices_ordenados = sorted(list(indices_para_remover), reverse=True)
             
             print(f"[PDF] Removendo páginas (índices 0-based): {indices_ordenados}")
@@ -130,12 +136,9 @@ class TextExtractor:
                 print(f"[PDF] Texto nativo extraído ({len(text)} chars)")
 
             all_text += text + "\n"
-            txt_filename = os.path.splitext(filename)[0] + ".txt"
 
-            self.store_txt(
-                all_text,
-                txt_filename
-            )
-            
+        # Salva o arquivo de texto completo após processar todas as páginas
+        self.store_txt(all_text, txt_filename)
+             
         doc.close()
         return all_text

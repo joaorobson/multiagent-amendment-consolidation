@@ -2,22 +2,27 @@ import pandas as pd
 from experiments.llm import LLMClient, FakeLLMClient
 from experiments.ingestion import FileDownloader, TextExtractor
 from experiments.baseline.manager import BaselineManager
-from models import Proposicao, Emenda, Relatorio
+from models import Proposicao, Emenda, Relatorio, StatusEmenda
 from experiments.utils.datasets import get_pages_with_substitutive
 import numpy as np
+from experiments.utils import SimilarityRanker
 
-normas = pd.read_parquet("../data/datasets/normas.parquet")
-proposicoes = pd.read_parquet("../data/datasets/proposicoes.parquet")
-emendas = pd.read_parquet("../data/datasets/emendas.parquet")
-relatorios = pd.read_parquet("../data/datasets/relatorios.parquet")
+normas = pd.read_parquet("../data/datasets/fake/normas.parquet")
+proposicoes = pd.read_parquet("../data/datasets/fake/proposicoes.parquet")
+emendas = pd.read_parquet("../data/datasets/fake/emendas.parquet")
+relatorios = pd.read_parquet("../data/datasets/fake/relatorios.parquet")
 paginas_com_substitutivo = pd.read_csv("../data/datasets/paginas_com_substitutivo.csv")
 
-dict_paginas = get_pages_with_substitutive(paginas_com_substitutivo)
+dict_paginas = {} #get_pages_with_substitutive(paginas_com_substitutivo)
 
 llm_client = FakeLLMClient(responses={})
 baseline_manager = BaselineManager(llm_client, None, None)
 downloader = FileDownloader("../data/pdfs")
 text_extractor = TextExtractor("../data/pdfs", "../data/txts")
+sim_ranker = SimilarityRanker(None)
+
+APPLY_RANKING = False
+APPLY_PREPROCESSING = False
 
 
 if __name__ == "__main__":
@@ -27,29 +32,53 @@ if __name__ == "__main__":
         for idx, proposicao in proposicoes_norma.iterrows():
             emendas_proposicao_df = emendas[emendas.id_proposicao == proposicao.id]
             emendas_proposicao_df = emendas_proposicao_df.replace({np.nan: None})
-            emendas_proposicao = [
-                Emenda(**item) for item in emendas_proposicao_df.to_dict(orient="records")
-            ]
-            status_emendas = baseline_manager.get_amendments_status_dict(emendas_proposicao[:2])
+            emendas_proposicao = {item["id"]: Emenda(**item) for item in emendas_proposicao_df.to_dict(orient="records")}
 
-            print(status_emendas)
-
-
-
+            print("emendas disponiveis:", emendas_proposicao)
+            print("="*100)
             relatorios_proposicao = relatorios[relatorios.id_proposicao == proposicao.id]
+            relatorios_proposicao.sort_values(by="data_apresentacao", inplace=True)
             for relatorio in relatorios_proposicao.itertuples():
-                #downloader.download(relatorio.url_doc, f"{relatorio.id}.pdf")
-                #txt_relatorio = text_extractor.extract_text(f"{relatorio.id}.pdf", dict_paginas.get(str(relatorio.id), []))
+                downloader.download(relatorio.url_doc, f"relatorio-{relatorio.id}.pdf")
+                txt_relatorio = text_extractor.extract_text(f"relatorio-{relatorio.id}.pdf", dict_paginas.get(str(relatorio.id), []))
 
-                extracted_amendments_status = baseline_manager.get_amendments_status("bla bla")
-                print(extracted_amendments_status)
-                baseline_manager.update_amendments_status(extracted_amendments_status, status_emendas)
-                print(status_emendas)
+                status_extraido = baseline_manager.get_amendments_status(txt_relatorio)
+                print(status_extraido)
+                baseline_manager.update_amendments_status(emendas_proposicao, status_extraido)
                 break
 
+            downloader.download(proposicao.avulso_inicial_url_doc, f"proposicao-{proposicao.id}.pdf")
+            txt_inicial = text_extractor.extract_text(f"proposicao-{proposicao.id}.pdf")
+
+            emendas_para_aplicar = baseline_manager.get_approved_amendments(emendas_proposicao)
+            print(emendas_para_aplicar)
+
+            for emenda in emendas_para_aplicar:
+                downloader.download(emenda.url_doc, f"emenda-{emenda.id}.pdf")
+                emenda.texto = text_extractor.extract_text(f"emenda-{emenda.id}.pdf")
+
+            if APPLY_RANKING:
+                first_emenda_id = sorted(emendas_para_aplicar, key=lambda e: e.id)[0].id
+                emendas_para_aplicar = sim_ranker.rank_by_similarity({e.id: e.texto for e in emendas_para_aplicar}, first_emenda_id)
+            
+            changes = {}
+            for emenda in emendas_para_aplicar:
+                print(f"Aplicando emenda {emenda.id} - {emenda.numero}")
+                changes[emenda.id] = baseline_manager.get_changes(emenda, txt_inicial)
+            print(changes)
+
+            txt = txt_inicial
+            print("-"*100)
+            print(txt)
+            print("="*100)
+            for amendment_id, am_changes in changes.items():
+                for change in am_changes:
+                    print(change)
+                    txt = baseline_manager.apply_amendment_change(change, txt)
+                    #print(txt)
+            print(txt)
             break
-            #downloader.download(proposicao.avulso_inicial_url_doc, f"{proposicao.id}.pdf")
-            #txt = text_extractor.extract_text(f"{proposicao.id}.pdf")
+
             
         
         break

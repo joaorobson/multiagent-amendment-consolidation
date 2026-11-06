@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Annotated
 from enum import Enum
 from datetime import datetime
+from .emenda import Emenda
 
 class Casa(Enum):
     CAMARA = "Câmara dos Deputados"
@@ -80,26 +81,7 @@ Autor = Annotated[
     Field(discriminator="tipo"),
 ]
 
-class Emenda(BaseModel):
-    id: int
-    id_proposicao: int
-    numero: int
-    id_original: int
-    data_apresentacao: datetime
-    orgao: Optional[str] = None
-    tipo: Optional[str] = None
-    descricao: Optional[str] = None
-    ementa: Optional[str] = None
-    url_doc: Optional[str] = None
-    url_metadados: Optional[str] = None
 
-class StatusEmenda(Enum):
-    APROVADA = "Aprovada"
-    REJEITADA = "Rejeitada"
-    APROVADA_PARCIALMENTE = "Aprovada parcialmente"
-    PREJUDICADA = "Prejudicada"
-    RETIRADA = "Retirada"
-    NAO_APRECIADA = "Não apreciada"
 
 class Relatorio(BaseModel):
     id: int
