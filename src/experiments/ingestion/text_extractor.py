@@ -4,6 +4,7 @@ import json
 import pytesseract
 
 from PIL import Image
+from typing import List
 
 
 class TextExtractor:
@@ -63,8 +64,11 @@ class TextExtractor:
 
         return text
 
-    def extract_text(self, filename: str) -> str:
-
+    def extract_text(self, filename: str, pages_to_remove: List[List[int]] = None) -> str:
+        """
+        Extrai o texto do PDF, permitindo excluir páginas por intervalos.
+        Exemplo: pages_to_remove = [[3, 5], [8, 9]] (indexado a partir de 1).
+        """
         print(f"[PDF] Iniciando processamento de PDFs")
 
         filepath = os.path.join(self.pdfs_path, filename)
@@ -76,7 +80,37 @@ class TextExtractor:
 
         doc = fitz.open(filepath)
 
-        print(f"[PDF] Total páginas: {len(doc)}")
+        # -------------------------------------------------------------
+        # VALIDAÇÃO E LÓGICA DE EXCLUSÃO DE PÁGINAS
+        # -------------------------------------------------------------
+        if pages_to_remove:
+            # Valida se é uma lista de listas com 2 membros cada
+            if not isinstance(pages_to_remove, list):
+                raise TypeError("O parâmetro 'pages_to_remove' deve ser uma lista.")
+            
+            indices_para_remover = set()
+            for item in pages_to_remove:
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    raise ValueError(f"Cada intervalo deve ser uma lista/tupla com exatamente 2 membros. Inválido: {item}")
+                
+                inicio, fim = item
+                for p in range(inicio, fim + 1):
+                    indices_para_remover.add(p - 1)  # Converte para índice 0
+
+            # Ordena em ordem decrescente para deletar sem bagunçar os índices
+            indices_ordenados = sorted(list(indices_para_remover), reverse=True)
+            
+            print(f"[PDF] Removendo páginas (índices 0-based): {indices_ordenados}")
+            for idx in indices_ordenados:
+                if 0 <= idx < len(doc):
+                    doc.delete_page(idx)
+
+        print(f"[PDF] Total páginas (após remoções): {len(doc)}")
+
+        if len(doc) == 0:
+            print("[PDF] Aviso: O documento ficou sem páginas após a remoção.")
+            doc.close()
+            return ""
 
         first_page_text = doc[0].get_text().strip()
 
@@ -87,7 +121,6 @@ class TextExtractor:
         all_text = ""
 
         for page_num, page in enumerate(doc):
-
             print(f"[PDF] Página {page_num}")
 
             if use_ocr:
@@ -103,4 +136,6 @@ class TextExtractor:
                 all_text,
                 txt_filename
             )
+            
+        doc.close()
         return all_text

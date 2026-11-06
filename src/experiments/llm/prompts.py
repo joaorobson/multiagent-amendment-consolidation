@@ -1,0 +1,3 @@
+EXTRAIR_EMENDAS_RELATORIO_PROMPT = """
+Extraia emendas
+"""
