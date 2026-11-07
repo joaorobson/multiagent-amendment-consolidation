@@ -6,6 +6,7 @@ from models import Proposicao, Emenda, Relatorio, StatusEmenda
 from experiments.utils.datasets import get_pages_with_substitutive
 import numpy as np
 from experiments.utils import SimilarityRanker
+from experiments.lexml.lexml_parser_wrapper import LexMLParserWrapper
 
 normas = pd.read_parquet("../data/datasets/fake/normas.parquet")
 proposicoes = pd.read_parquet("../data/datasets/fake/proposicoes.parquet")
@@ -20,6 +21,7 @@ baseline_manager = BaselineManager(llm_client, None, None)
 downloader = FileDownloader("../data/pdfs")
 text_extractor = TextExtractor("../data/pdfs", "../data/txts")
 sim_ranker = SimilarityRanker(None)
+lexml_parser = LexMLParserWrapper(jar_path="../data/lexml/lexml-parser-projeto-lei-1.15.8-SNAPSHOT-onejar.jar", java_path="java")
 
 APPLY_RANKING = False
 APPLY_PREPROCESSING = False
@@ -77,6 +79,25 @@ if __name__ == "__main__":
                     txt = baseline_manager.apply_amendment_change(change, txt)
                     #print(txt)
             print(txt)
+            try:
+                # Chama o método passando a string diretamente
+                resultado_xml = lexml_parser.parse_texto(
+                    texto=txt,
+                    mime_type="text/plain",
+                    tipo_norma="medida.provisoria",
+                    autoridade="federal",
+                    localidade="br",
+                    numero="123",
+                    ano="2026",
+                    output_path="../data/lexml/output.xml",
+                    opcoes_extras=["--prof-epigrafe-opcional"] # <--- O SEGREDO ESTÁ AQUI
+                )
+
+                print("--- Resultado do Parse (da memória) ---")
+                print(resultado_xml)
+
+            except Exception as e:
+                print(f"Erro: {e}")
             break
 
             
