@@ -4,6 +4,8 @@ from typing import List, Optional
 import os
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
+
 
 class LexMLParserWrapper:
     """Classe em Python para encapsular a execução do lexml-parser-projeto-lei (JAR)."""
@@ -224,3 +226,22 @@ class LexMLParserWrapper:
             # 5. Garante que o arquivo temporário será apagado mesmo se der erro
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    @staticmethod
+    def extrair_artigos(xml: str) -> list[str]:
+        root = ET.fromstring(xml)
+
+        ns = {"lex": "http://www.lexml.gov.br/1.0"}
+
+        artigos = []
+
+        for artigo in root.findall(".//lex:Articulacao/lex:Artigo", ns):
+            texto = " ".join(
+                texto.strip()
+                for texto in artigo.itertext()
+                if texto.strip()
+            )
+
+            artigos.append(texto)
+
+        return artigos

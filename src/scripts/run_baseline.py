@@ -6,6 +6,8 @@ from models import Proposicao, Emenda, Relatorio, StatusEmenda
 from experiments.utils.datasets import get_pages_with_substitutive
 import numpy as np
 from experiments.utils import SimilarityRanker
+from experiments.eval.bert_score import BERTScoreEvaluator
+from experiments.eval.text_evaluator import TextEvaluator
 from experiments.lexml.lexml_parser_wrapper import LexMLParserWrapper
 
 normas = pd.read_parquet("../data/datasets/fake/normas.parquet")
@@ -22,7 +24,8 @@ downloader = FileDownloader("../data/pdfs")
 text_extractor = TextExtractor("../data/pdfs", "../data/txts")
 sim_ranker = SimilarityRanker(None)
 lexml_parser = LexMLParserWrapper(jar_path="../data/lexml/lexml-parser-projeto-lei-1.15.8-SNAPSHOT-onejar.jar", java_path="java")
-
+bert_score_evaluator = BERTScoreEvaluator()
+text_evaluator = TextEvaluator(bert_score_evaluator, lexml_parser)
 APPLY_RANKING = False
 APPLY_PREPROCESSING = False
 
@@ -52,6 +55,9 @@ if __name__ == "__main__":
             downloader.download(proposicao.avulso_inicial_url_doc, f"proposicao-{proposicao.id}.pdf")
             txt_inicial = text_extractor.extract_text(f"proposicao-{proposicao.id}.pdf")
 
+            downloader.download(proposicao.autografo_url_doc, f"autografo-{proposicao.id}.pdf")
+            txt_final = text_extractor.extract_text(f"autografo-{proposicao.id}.pdf")
+
             emendas_para_aplicar = baseline_manager.get_approved_amendments(emendas_proposicao)
             print(emendas_para_aplicar)
 
@@ -78,27 +84,15 @@ if __name__ == "__main__":
                     print(change)
                     txt = baseline_manager.apply_amendment_change(change, txt)
                     #print(txt)
+
+            print("texto gerado")
             print(txt)
-            try:
-                # Chama o método passando a string diretamente
-                resultado_xml = lexml_parser.parse_texto(
-                    texto=txt,
-                    mime_type="text/plain",
-                    tipo_norma="medida.provisoria",
-                    autoridade="federal",
-                    localidade="br",
-                    numero="123",
-                    ano="2026",
-                    output_path="../data/lexml/output.xml",
-                    opcoes_extras=["--prof-epigrafe-opcional"] # <--- O SEGREDO ESTÁ AQUI
-                )
+            print("="*100)
 
-                print("--- Resultado do Parse (da memória) ---")
-                print(resultado_xml)
+            print("texto final")
+            print(txt_final)
 
-            except Exception as e:
-                print(f"Erro: {e}")
-            break
+            text_evaluator.evaluate_autografo(txt, txt_final)
 
             
         

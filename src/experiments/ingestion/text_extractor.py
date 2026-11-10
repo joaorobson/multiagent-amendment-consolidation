@@ -132,7 +132,18 @@ class TextExtractor:
             if use_ocr:
                 text = self.extract_page_with_ocr(page)
             else:
-                text = page.get_text()
+                # Extrai por blocos estruturais (parágrafos)
+                blocos = page.get_text("blocks")
+                text = ""
+                
+                for b in blocos:
+                    # b[4] contém o texto do bloco.
+                    # Substituímos as quebras de linha do meio do bloco por espaços
+                    texto_do_bloco = b[4].replace('\n', ' ').strip()
+                    
+                    if texto_do_bloco:
+                        text += texto_do_bloco + "\n"
+                        
                 print(f"[PDF] Texto nativo extraído ({len(text)} chars)")
 
             all_text += text + "\n"
