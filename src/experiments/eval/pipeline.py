@@ -1,15 +1,15 @@
 
-from typing import Dict
+from typing import Dict, List
+from .base_evaluator import BaseEvaluator
 
-
-class TextEvaluator:
-    def __init__(self, bert_score_evaluator, lexml_parser):
-        self.bert_score_evaluator = bert_score_evaluator
+class EvaluationPipeline:
+    def __init__(self, lexml_parser, evaluators: List[BaseEvaluator]):
         self.lexml_parser = lexml_parser
+        self.evaluators = evaluators
 
-    def evaluate_autografo(self, texto_gerado: str, texto_referencia: str) -> Dict[str, float]:
+    def evaluate(self, texto_gerado: str, texto_referencia: str) -> Dict[str, float]:
         """
-        Avalia a similaridade entre o texto gerado e o texto de referência usando BERTScore.
+        Avalia a similaridade entre o texto gerado e o texto de referência usando BERTScore e xmldiff.
         
         Args:
             texto_gerado (str): O texto gerado pelo sistema.
@@ -55,14 +55,12 @@ class TextEvaluator:
                 conteudo_xml_ref = f.read().strip() 
 
 
-            artigos_gerado = self.lexml_parser.extrair_artigos(conteudo_xml)
-            artigos_referencia = self.lexml_parser.extrair_artigos(conteudo_xml_ref)
-            print(artigos_gerado)
-            print(artigos_referencia)
+            results = {}
 
-            resultados = self.bert_score_evaluator.avaliar_lote(textos_gerados=artigos_gerado, textos_referencia=artigos_referencia)
-            print(resultados)
+            for evaluator in self.evaluators:
+                results[evaluator.name]  = evaluator.eval(conteudo_xml, conteudo_xml_ref)
+
         except Exception as e:
             print(f"Erro: {e}")
 
-        pass
+        return results

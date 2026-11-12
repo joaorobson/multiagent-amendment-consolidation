@@ -6,8 +6,7 @@ from models import Proposicao, Emenda, Relatorio, StatusEmenda
 from experiments.utils.datasets import get_pages_with_substitutive
 import numpy as np
 from experiments.utils import SimilarityRanker
-from experiments.eval.bert_score import BERTScoreEvaluator
-from experiments.eval.text_evaluator import TextEvaluator
+from experiments.eval import EvaluationPipeline, BERTScoreEvaluator, XMLEvaluator
 from experiments.lexml.lexml_parser_wrapper import LexMLParserWrapper
 
 normas = pd.read_parquet("../data/datasets/fake/normas.parquet")
@@ -24,8 +23,7 @@ downloader = FileDownloader("../data/pdfs")
 text_extractor = TextExtractor("../data/pdfs", "../data/txts")
 sim_ranker = SimilarityRanker(None)
 lexml_parser = LexMLParserWrapper(jar_path="../data/lexml/lexml-parser-projeto-lei-1.15.8-SNAPSHOT-onejar.jar", java_path="java")
-bert_score_evaluator = BERTScoreEvaluator()
-text_evaluator = TextEvaluator(bert_score_evaluator, lexml_parser)
+evaluation_pipeline = EvaluationPipeline(lexml_parser, [BERTScoreEvaluator(lexml_parser, "BERTScore"), XMLEvaluator("xmldiff")])
 APPLY_RANKING = False
 APPLY_PREPROCESSING = False
 
@@ -92,8 +90,5 @@ if __name__ == "__main__":
             print("texto final")
             print(txt_final)
 
-            text_evaluator.evaluate_autografo(txt, txt_final)
-
-            
-        
-        break
+            eval_results = evaluation_pipeline.evaluate(txt, txt_final)
+            print(eval_results)

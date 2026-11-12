@@ -1,13 +1,16 @@
 import torch
 from typing import List, Dict, Union
 from bert_score import BERTScorer
+from .base_evaluator import BaseEvaluator
 
-class BERTScoreEvaluator:
-    def __init__(self, model_type: str = "Itau-Unibanco/NorBERTo-large", batch_size: int = 4):
+class BERTScoreEvaluator(BaseEvaluator):
+    def __init__(self, lexml_parser, name, model_type: str = "Itau-Unibanco/NorBERTo-large", batch_size: int = 4):
         """
         Inicializa o avaliador carregando o modelo na memória.
         O dispositivo (CPU ou GPU) é detectado automaticamente.
         """
+        super().__init__(name)
+        self.lexml_parser = lexml_parser
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.batch_size = batch_size
         
@@ -21,30 +24,30 @@ class BERTScoreEvaluator:
             # Como o NorBERTo é nativo, omitimos ou gerenciamos internamente pela biblioteca
         )
 
-    def avaliar_par(self, texto_gerado: str, texto_referencia: str) -> Dict[str, float]:
-        """
-        Avalia um único par de textos.
-        Útil para debugar as saídas de uma deliberação ou aplicação específica de emenda.
-        """
-        # O BERTScore espera receber listas de strings
-        P, R, F1 = self.scorer.score([texto_gerado], [texto_referencia])
-        
-        return {
-            "Precisao": round(P.item(), 4),
-            "Recall": round(R.item(), 4),
-            "F1_Score": round(F1.item(), 4)
-        }
+    def get_chunks(self, txt):
+        return self.lexml_parser.extrair_artigos(txt)
 
-    def avaliar_lote(self, textos_gerados: List[str], textos_referencia: List[str]) -> Dict[str, Union[float, List[Dict[str, float]]]]:
+    def eval(
+            self, 
+            txt: str, 
+            txt_ref: str
+        ) -> Dict[str, Union[float, List[Dict[str, float]]]]:
         """
-        Avalia múltiplos textos simultaneamente.
-        Ideal para o dataset de benchmark final comparando todos os autógrafos gerados.
+        Avalia um texto único ou um lote de textos gerados em relação às referências.
+        Identifica automaticamente o tipo de entrada (str vs List[str]).
         """
-        if len(textos_gerados) != len(textos_referencia):
+
+        txts = self.get_chunks(txt)
+        txts_ref = self.get_chunks(txt_ref)
+
+        # Validação de tamanho para listas
+        if len(txts) != len(txts_ref):
             raise ValueError("As listas de textos gerados e de referência precisam ter o mesmo tamanho.")
             
-        P, R, F1 = self.scorer.score(textos_gerados, textos_referencia, batch_size=self.batch_size)
-        
+        # Executa o BERTScore (suporta lotes eficientemente)
+        P, R, F1 = self.scorer.score(txts, txts_ref, batch_size=getattr(self, 'batch_size', 32))
+            
+        # Se foi passado uma lista, retorna as médias e os scores individuais (batch)
         scores_individuais = [
             {
                 "Precisao": round(p.item(), 4), 
@@ -53,7 +56,7 @@ class BERTScoreEvaluator:
             }
             for p, r, f in zip(P, R, F1)
         ]
-        print(scores_individuais)
+        
         return {
             "Precisao_Media": round(P.mean().item(), 4),
             "Recall_Medio": round(R.mean().item(), 4),
