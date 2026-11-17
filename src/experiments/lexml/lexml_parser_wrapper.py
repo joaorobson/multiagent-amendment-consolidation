@@ -1,8 +1,7 @@
 import subprocess
 import re
-from typing import List, Optional
+from typing import List, Optional, Union
 import os
-import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
@@ -11,54 +10,55 @@ class LexMLParserWrapper:
     """Classe em Python para encapsular a execução do lexml-parser-projeto-lei (JAR)."""
 
     def __init__(self, jar_path: str, java_path: str = "java"):
-        """Inicializa o wrapper do LexML Parser.
-
-        :path: Caminho para o arquivo .jar compilado (ex:
-        'target/lexml-parser-projeto-lei-1.0.0-onejar.jar')
-        :param java_path: Caminho para o executável java (default: 'java')
-        """
         self.jar_path = jar_path
         self.java_path = java_path
 
     def _sanitizar_texto_lexml(self, texto: str) -> str:
         """
-        Limpa o texto para garantir conformidade com as Regex do LexML Parser 
+        Limpa o texto para garantir conformidade com as Regex do LexML Parser
         e contorna o bug de agrupamento reverso (toPars) no XHTMLProcessor.scala.
         """
         if not texto:
             return texto
 
-        # 1. Troca travessões (en-dash e em-dash) por hífen simples
         texto = texto.replace("–", "-").replace("—", "-")
-        
-        # 2. Troca o símbolo de grau (°) pelo ordinal correto (º)
         texto = texto.replace("°", "º")
-        
-        # 3. Força uma quebra de linha extra entre as linhas com conteúdo.
-        # Isso isola cada parágrafo em um bloco próprio, impedindo o bug
-        # de inversão de linhas (reverse) no parser do texto plano.
+
         linhas_validas = [linha for linha in texto.splitlines() if linha.strip()]
         texto = "\n\n".join(linhas_validas)
-        
-        # 4. Garante espaçamento rigoroso nos incisos (Ex: "I- " vira "I - ")
-        # Regex atua no início de linha capturando numerais romanos
+
         texto = re.sub(r'^([IVXLCDM]+)\s*-\s*', r'\1 - ', texto, flags=re.MULTILINE)
-        
+
         return texto
+
+    def _montar_xhtml_articulacao(self, texto: Union[str, List[str]]) -> str:
+        """Converte texto plano (ou lista de parágrafos) para <root><p>...</p></root>."""
+        if isinstance(texto, list):
+            linhas = [linha.strip() for linha in texto if linha and linha.strip()]
+        else:
+            texto_limpo = self._sanitizar_texto_lexml(texto)
+            linhas = [linha.strip() for linha in texto_limpo.splitlines() if linha.strip()]
+
+        root = ET.Element("root")
+        for linha in linhas:
+            p = ET.SubElement(root, "p")
+            p.text = linha
+
+        return ET.tostring(root, encoding="unicode")
 
     def _executar(self, args: List[str]) -> subprocess.CompletedProcess:
         """Método interno para executar o comando via subprocess."""
-        comando = [self.java_path, "-jar", self.jar_path] + args
+        comando = [self.java_path, "-Dfile.encoding=UTF-8", "-jar", self.jar_path] + args
         try:
-            resultado = subprocess.run(
+            return subprocess.run(
                 comando,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
+                errors="replace",
                 check=False,
             )
-            return resultado
         except Exception as e:
             raise RuntimeError(f"Erro ao executar o comando Java: {e}")
 
@@ -71,23 +71,55 @@ class LexMLParserWrapper:
 
     def parse_articulacao(
         self,
+        texto: Optional[Union[str, List[str]]] = None,
         input_path: Optional[str] = None,
         output_path: Optional[str] = None,
         linker: Optional[str] = None,
     ) -> str:
         """Faz o parse apenas da articulação (comando parseArticulacao)."""
-        args = ["parseArticulacao"]
-        if input_path:
-            args.extend(["-i", input_path])
-        if output_path:
-            args.extend(["-o", output_path])
-        if linker:
-            args.extend(["--linker", linker])
+        tmp_in_path = None
+        tmp_out_path = None
+        try:
+            if texto is not None:
+                conteudo_xml = (
+                    texto
+                    if isinstance(texto, str) and texto.lstrip().startswith("<")
+                    else self._montar_xhtml_articulacao(texto)
+                )
+                with tempfile.NamedTemporaryFile(
+                    delete=False, mode="w", encoding="utf-8", suffix=".xml"
+                ) as tmp_in:
+                    tmp_in.write(conteudo_xml)
+                    tmp_in_path = tmp_in.name
+                input_path = tmp_in_path
 
-        resultado = self._executar(args)
-        if resultado.returncode != 0:
-            raise RuntimeError(f"Erro no parseArticulacao: {resultado.stderr}")
-        return resultado.stdout
+            # Se output_path não foi informado, grava em arquivo temporário para isolar dos logs do Pekko
+            if not output_path:
+                with tempfile.NamedTemporaryFile(
+                    delete=False, mode="w", encoding="utf-8", suffix=".xml"
+                ) as tmp_out:
+                    tmp_out_path = tmp_out.name
+                destino_saida = tmp_out_path
+            else:
+                destino_saida = output_path
+
+            args = ["parseArticulacao"]
+            if input_path:
+                args.extend(["-i", input_path])
+            args.extend(["-o", destino_saida])
+            if linker:
+                args.extend(["--linker", linker])
+
+            resultado = self._executar(args)
+            if resultado.returncode != 0:
+                raise RuntimeError(f"Erro no parseArticulacao: {resultado.stderr}")
+
+            with open(destino_saida, "r", encoding="utf-8") as f:
+                return f.read()
+        finally:
+            for path in (tmp_in_path, tmp_out_path):
+                if path and os.path.exists(path):
+                    os.remove(path)
 
     def parse(
         self,
@@ -155,26 +187,28 @@ class LexMLParserWrapper:
 
     def parse_texto(self, texto: str, mime_type: str = "text/plain", **kwargs) -> str:
         """Executa o comando 'parse' recebendo o conteúdo do texto diretamente da memória."""
-        
-        # 1. Sanitiza o texto
         texto = self._sanitizar_texto_lexml(texto)
 
-        # 2. Cria um arquivo temporário e escreve o texto nele
-        with tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8", suffix=".txt") as tmp:
-            tmp.write(texto)
-            tmp_path = tmp.name
+        with tempfile.NamedTemporaryFile(
+            delete=False, mode="w", encoding="utf-8", suffix=".txt"
+        ) as tmp_in:
+            tmp_in.write(texto)
+            tmp_in_path = tmp_in.name
+
+        tmp_out_path = None
+        output_path = kwargs.get("output_path")
+        if not output_path:
+            with tempfile.NamedTemporaryFile(
+                delete=False, mode="w", encoding="utf-8", suffix=".xml"
+            ) as tmp_out:
+                tmp_out_path = tmp_out.name
+            destino_saida = tmp_out_path
+        else:
+            destino_saida = output_path
 
         try:
-            # 3. Prepara os argumentos
-            args = ["parse"]
-            args.extend(["-m", mime_type])
-            args.extend(["-i", tmp_path]) # <--- PASSA O ARQUIVO TEMPORÁRIO AQUI
+            args = ["parse", "-m", mime_type, "-i", tmp_in_path, "-o", destino_saida]
 
-            # Repassa os demais argumentos opcionais, exceto input_path e output_path (pois queremos a saída no stdout)
-            if kwargs.get("mime_type"):
-                args.extend(["-m", kwargs["mime_type"]])
-            if kwargs.get("output_path"):
-                args.extend(["-o", kwargs["output_path"]])
             if kwargs.get("write_errors_to_file"):
                 args.extend(["--write-errors-to-file", kwargs["write_errors_to_file"]])
             if kwargs.get("info"):
@@ -204,35 +238,22 @@ class LexMLParserWrapper:
             if kwargs.get("opcoes_extras"):
                 args.extend(kwargs["opcoes_extras"])
 
-            comando = [self.java_path, "-jar", self.jar_path] + args
-            
-            # 4. Executa o comando (sem usar o input=texto do subprocess)
-            resultado = subprocess.run(
-                comando,
-                stdout=subprocess.PIPE,
-                stderr=sys.stderr,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-            )
-            
+            resultado = self._executar(args)
             if resultado.returncode != 0:
                 raise RuntimeError(f"Erro no parse de texto: {resultado.stderr}")
-                
-            return resultado.stdout
+
+            with open(destino_saida, "r", encoding="utf-8") as f:
+                return f.read()
 
         finally:
-            # 5. Garante que o arquivo temporário será apagado mesmo se der erro
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            for path in (tmp_in_path, tmp_out_path):
+                if path and os.path.exists(path):
+                    os.remove(path)
 
     @staticmethod
     def extrair_artigos(xml: str) -> list[str]:
         root = ET.fromstring(xml)
-
         ns = {"lex": "http://www.lexml.gov.br/1.0"}
-
         artigos = []
 
         for artigo in root.findall(".//lex:Articulacao/lex:Artigo", ns):
@@ -241,7 +262,6 @@ class LexMLParserWrapper:
                 for texto in artigo.itertext()
                 if texto.strip()
             )
-
             artigos.append(texto)
 
         return artigos

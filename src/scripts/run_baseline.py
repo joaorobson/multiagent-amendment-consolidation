@@ -52,9 +52,11 @@ if __name__ == "__main__":
 
             downloader.download(proposicao.avulso_inicial_url_doc, f"proposicao-{proposicao.id}.pdf")
             txt_inicial = text_extractor.extract_text(f"proposicao-{proposicao.id}.pdf")
-
+            xml_txt_inicial = lexml_parser.parse_texto(txt_inicial, opcoes_extras=["--prof-epigrafe-opcional"] )
+            
             downloader.download(proposicao.autografo_url_doc, f"autografo-{proposicao.id}.pdf")
             txt_final = text_extractor.extract_text(f"autografo-{proposicao.id}.pdf")
+            xml_txt_final = lexml_parser.parse_texto(txt_final, opcoes_extras=["--prof-epigrafe-opcional"] )
 
             emendas_para_aplicar = baseline_manager.get_approved_amendments(emendas_proposicao)
             print(emendas_para_aplicar)
@@ -69,26 +71,28 @@ if __name__ == "__main__":
             
             changes = {}
             for emenda in emendas_para_aplicar:
-                print(f"Aplicando emenda {emenda.id} - {emenda.numero}")
-                changes[emenda.id] = baseline_manager.get_changes(emenda, txt_inicial)
+                changes[emenda.id] = baseline_manager.get_changes(emenda, xml_txt_inicial)
+                for change in changes[emenda.id]:
+                    if change.paragrafos_xhtml:
+                        change.xml = lexml_parser.parse_articulacao(change.paragrafos_xhtml)
             print(changes)
 
-            txt = txt_inicial
+            txt = xml_txt_inicial
             print("-"*100)
-            print(txt)
-            print("="*100)
+            print(xml_txt_inicial)
+            print("-"*100)
             for amendment_id, am_changes in changes.items():
                 for change in am_changes:
                     print(change)
                     txt = baseline_manager.apply_amendment_change(change, txt)
                     #print(txt)
-
+            
             print("texto gerado")
             print(txt)
             print("="*100)
 
             print("texto final")
-            print(txt_final)
+            print(xml_txt_final)
 
-            eval_results = evaluation_pipeline.evaluate(txt, txt_final)
+            eval_results = evaluation_pipeline.evaluate(txt, xml_txt_final)
             print(eval_results)
