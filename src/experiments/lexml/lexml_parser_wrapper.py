@@ -251,17 +251,42 @@ class LexMLParserWrapper:
                     os.remove(path)
 
     @staticmethod
-    def extrair_artigos(xml: str) -> list[str]:
+    def extrair_artigos_por_id(xml: str) -> dict[str, str]:
+        """Retorna um dicionário {id_lexml: texto_artigo} mantendo a ordem do documento."""
+        inicio = xml.find("<")
+        if inicio > 0:
+            xml = xml[inicio:]
+
         root = ET.fromstring(xml)
         ns = {"lex": "http://www.lexml.gov.br/1.0"}
-        artigos = []
+        artigos: dict[str, str] = {}
 
-        for artigo in root.findall(".//lex:Articulacao/lex:Artigo", ns):
+        for idx, artigo in enumerate(root.findall(".//lex:Articulacao//lex:Artigo", ns)):
+            art_id = artigo.get("id") or f"sem_id_{idx}"
             texto = " ".join(
-                texto.strip()
-                for texto in artigo.itertext()
-                if texto.strip()
+                t.strip()
+                for t in artigo.itertext()
+                if t.strip()
             )
-            artigos.append(texto)
+            artigos[art_id] = texto
 
         return artigos
+
+    @classmethod
+    def alinhar_artigos(cls, xml_gerado: str, xml_ref: str) -> tuple[list[str], list[str]]:
+        """
+        Alinha os artigos pela união ordenada dos IDs LexML.
+        Preenche com string vazia '' quando um artigo existe em apenas um dos XMLs,
+        permitindo que o BERTScore penalize omissões (Recall) e inserções indevidas (Precision).
+        """
+        mapa_gerado = cls.extrair_artigos_por_id(xml_gerado)
+        mapa_ref = cls.extrair_artigos_por_id(xml_ref)
+
+        # União preservando a ordem do gabarito oficial (xml_ref),
+        # seguida de eventuais artigos extras gerados que não existem no gabarito
+        todos_ids = list(dict.fromkeys(list(mapa_ref.keys()) + list(mapa_gerado.keys())))
+
+        txts_gerados = [mapa_gerado.get(art_id, "") for art_id in todos_ids]
+        txts_ref = [mapa_ref.get(art_id, "") for art_id in todos_ids]
+
+        return txts_gerados, txts_ref

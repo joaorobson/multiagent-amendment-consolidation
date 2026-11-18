@@ -24,9 +24,6 @@ class BERTScoreEvaluator(BaseEvaluator):
             # Como o NorBERTo é nativo, omitimos ou gerenciamos internamente pela biblioteca
         )
 
-    def get_chunks(self, txt):
-        return self.lexml_parser.extrair_artigos(txt)
-
     def eval(
             self, 
             txt: str, 
@@ -37,12 +34,11 @@ class BERTScoreEvaluator(BaseEvaluator):
         Identifica automaticamente o tipo de entrada (str vs List[str]).
         """
 
-        txts = self.get_chunks(txt)
-        txts_ref = self.get_chunks(txt_ref)
+        txts, txts_ref = self.lexml_parser.alinhar_artigos(txt, txt_ref)
 
         # Validação de tamanho para listas
-        if len(txts) != len(txts_ref):
-            raise ValueError("As listas de textos gerados e de referência precisam ter o mesmo tamanho.")
+        if not txts:
+            raise ValueError("Nenhum artigo em comum encontrado entre o XML gerado e o de referência.")
             
         # Executa o BERTScore (suporta lotes eficientemente)
         P, R, F1 = self.scorer.score(txts, txts_ref, batch_size=getattr(self, 'batch_size', 32))

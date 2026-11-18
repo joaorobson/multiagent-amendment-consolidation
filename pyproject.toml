@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=25.0.1",
     "pymupdf>=1.28.2",
     "pytesseract>=0.3.13",
+    "transformers<5.0.0",
     "torch>=2.15.0",
     "xmldiff>=3.0",
 ]

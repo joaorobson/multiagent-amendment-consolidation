@@ -30,6 +30,14 @@ class FakeLLMClient:
                     status=StatusEmenda.APROVADA,
                     justificativa="A divulgação de informações sobre projetos, recursos e execução fortalece a transparência, o controle social e a eficiência administrativa.",
                 ),
+                7: DeliberacaoEmenda(
+                    status=StatusEmenda.APROVADA,
+                    justicativa="Sim"
+                ),
+                8: DeliberacaoEmenda(
+                    status=StatusEmenda.APROVADA,
+                    justificativa="OK"
+                )
             }
 
         elif prompt == PROMPT_BUSCAR_EDICOES:
@@ -50,14 +58,14 @@ class FakeLLMClient:
                 3: [
                     MudancaEmenda(
                         tipo=TipoMudancaEmenda.MODIFICATIVA,
-                        id_lexml="art6_cpt_inc6",
+                        id_lexml="art6_cpt_inc5",
                         paragrafos_xhtml=[
-                            "VI - prioridade para projetos apresentados por Municípios de pequeno porte e por localidades que apresentem indicadores de maior vulnerabilidade socioeconômica.",
+                            "V - prioridade para projetos apresentados por Municípios de pequeno porte e por localidades que apresentem indicadores de maior vulnerabilidade socioeconômica.",
                         ],
                     ),
                     MudancaEmenda(
-                        tipo=TipoMudancaEmenda.MODIFICATIVA,
-                        id_lexml="art6_par1u",
+                        tipo=TipoMudancaEmenda.ADITIVA,
+                        id_lexml="art6",
                         paragrafos_xhtml=[
                             "Parágrafo único. Na aplicação do critério previsto no inciso VI, deverão ser considerados, entre outros fatores, o porte populacional do Município, os indicadores sociais e econômicos disponíveis e a necessidade de recuperação da infraestrutura dos equipamentos públicos abrangidos pelo Programa.",
                         ],
@@ -81,4 +89,17 @@ class FakeLLMClient:
                         ],
                     )
                 ],
+                7: [
+                    MudancaEmenda(
+                        tipo=TipoMudancaEmenda.SUPRESSIVA,
+                        id_lexml="art2"
+                    )
+                ],
+                8: [
+                    MudancaEmenda(
+                        tipo=TipoMudancaEmenda.MODIFICATIVA,
+                        id_lexml="art3_par1",
+                        paragrafos_xhtml=["§ 1º O plano de trabalho conterá:"]
+                    )
+                ]
             }

@@ -8,6 +8,7 @@ import numpy as np
 from experiments.utils import SimilarityRanker
 from experiments.eval import EvaluationPipeline, BERTScoreEvaluator, XMLEvaluator
 from experiments.lexml.lexml_parser_wrapper import LexMLParserWrapper
+from lxml import etree
 
 normas = pd.read_parquet("../data/datasets/fake/normas.parquet")
 proposicoes = pd.read_parquet("../data/datasets/fake/proposicoes.parquet")
@@ -62,37 +63,49 @@ if __name__ == "__main__":
             print(emendas_para_aplicar)
 
             for emenda in emendas_para_aplicar:
-                downloader.download(emenda.url_doc, f"emenda-{emenda.id}.pdf")
-                emenda.texto = text_extractor.extract_text(f"emenda-{emenda.id}.pdf")
+                ...
+                #downloader.download(emenda.url_doc, f"emenda-{emenda.id}.pdf")
+                #emenda.texto = text_extractor.extract_text(f"emenda-{emenda.id}.pdf")
 
             if APPLY_RANKING:
                 first_emenda_id = sorted(emendas_para_aplicar, key=lambda e: e.id)[0].id
                 emendas_para_aplicar = sim_ranker.rank_by_similarity({e.id: e.texto for e in emendas_para_aplicar}, first_emenda_id)
             
             changes = {}
+            txt = xml_txt_inicial
             for emenda in emendas_para_aplicar:
                 changes[emenda.id] = baseline_manager.get_changes(emenda, xml_txt_inicial)
                 for change in changes[emenda.id]:
                     if change.paragrafos_xhtml:
                         change.xml = lexml_parser.parse_articulacao(change.paragrafos_xhtml)
-            print(changes)
 
-            txt = xml_txt_inicial
-            print("-"*100)
-            print(xml_txt_inicial)
-            print("-"*100)
-            for amendment_id, am_changes in changes.items():
-                for change in am_changes:
-                    print(change)
                     txt = baseline_manager.apply_amendment_change(change, txt)
-                    #print(txt)
+
             
             print("texto gerado")
             print(txt)
+            parser = etree.XMLParser(remove_blank_text=True, encoding="utf-8")
+            tree = etree.fromstring(txt.strip().encode("utf-8"), parser=parser)
+
+            etree.ElementTree(tree).write(
+                "../data/lexml/out.xml",
+                encoding="utf-8",
+                xml_declaration=True,
+                pretty_print=True,
+            )
+
             print("="*100)
 
             print("texto final")
             print(xml_txt_final)
+            tree = etree.fromstring(xml_txt_final.strip().encode("utf-8"), parser=parser)
+
+            etree.ElementTree(tree).write(
+                "../data/lexml/out_ref.xml",
+                encoding="utf-8",
+                xml_declaration=True,
+                pretty_print=True,
+            )
 
             eval_results = evaluation_pipeline.evaluate(txt, xml_txt_final)
             print(eval_results)
