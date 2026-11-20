@@ -1,8 +1,8 @@
 import re
 
-from models import Emenda, DeliberacaoEmenda, MudancaEmenda, StatusEmenda, TipoMudancaEmenda
+from models import Emenda, DeliberacaoEmenda, MudancaEmenda, StatusEmenda, TipoMudancaEmenda, DeliberacoesEmenda, MudancasEmenda
 from typing import Dict, List, Dict
-from experiments.llm.prompts import PROMPT_APLICAR_EMENDAS, PROMPT_EXTRAIR_EMENDAS_RELATORIO, PROMPT_BUSCAR_EDICOES
+from experiments.llm.prompts import SYSTEM_PROMPT_APLICACAO_EMENDAS, SYSTEM_PROMPT_EXTRACAO_EMENDAS_RELATORIO
 from lxml import etree
 
 class BaselineManager:
@@ -12,8 +12,15 @@ class BaselineManager:
         self.text_extractor = text_extractor
         self.parser = etree.XMLParser(remove_blank_text=True, encoding="utf-8")
         self.ns = {"lex": "http://www.lexml.gov.br/1.0"}
+
     def get_amendments_status(self, report_text) -> Dict[int, DeliberacaoEmenda]:
-        return self.llm_client.call(PROMPT_EXTRAIR_EMENDAS_RELATORIO)
+        user_prompt = f"""Extraia a deliberação final de todas as emendas contidas no relatório legislativo abaixo:
+
+        <relatorio>
+        {report_text}
+        </relatorio>"""
+        status_emendas = self.llm_client.call(SYSTEM_PROMPT_EXTRACAO_EMENDAS_RELATORIO, user_prompt, response_format=DeliberacoesEmenda)
+        return {em.id_emenda: em for em in status_emendas}
 
     def update_amendments_status(self, amendments: Dict[int, Emenda], extracted_status: Dict[int, DeliberacaoEmenda]):
         for amendment_id, deliberacao in extracted_status.items():
@@ -21,12 +28,22 @@ class BaselineManager:
             if amendment_id in amendments:
                 amendments[amendment_id].deliberacao = deliberacao
 
-    def apply_amendments(self, amendments, initial_text):
-        return self.llm_client.call(PROMPT_APLICAR_EMENDAS)
+    def get_changes(self, emenda: Emenda, xml_texto_inicial: str) -> List[MudancaEmenda]:
+        user_prompt = f"""Aplique a emenda abaixo sobre o XML do texto inicial, retornando as mudanças estruturadas.
+        <xml_texto_inicial>
+        {xml_texto_inicial}
+        </xml_texto_inicial>
 
-    def get_changes(self, amendment, initial_text) -> List[MudancaEmenda]:
-        changes = self.llm_client.call(PROMPT_BUSCAR_EDICOES)
-        return changes.get(amendment.id, [])
+        <texto_emenda>
+        {emenda.texto}
+        </texto_emenda>
+
+        <deliberacao>
+        {emenda.deliberacao.justificativa if emenda.deliberacao.status == StatusEmenda.APROVADA_PARCIALMENTE else "Aprovada integralmente"}
+        </deliberacao>
+        """
+        changes = self.llm_client.call(SYSTEM_PROMPT_APLICACAO_EMENDAS, user_prompt, response_format=MudancasEmenda)
+        return changes.get(emenda.id, [])
 
     def _normalizar_bloco(self, texto: str) -> str:
         """
@@ -58,50 +75,56 @@ class BaselineManager:
 
     def apply_amendment_change(self, change: MudancaEmenda, xml_string: str) -> str:
         """
-        Aplica a mudança da emenda no XML estruturado usando o fragmento já parseado em `change.xml`.
+        Aplica a mudança da emenda no XML estruturado, convertendo `change.paragrafos_xhtml`
+        em nós LexML via `lexml_parser.parse_articulacao`.
         """
         if not change.id_lexml:
-            print(f"Aviso [Baseline XML]: Emenda sem id_lexml definido.")
+            print("Aviso [Baseline XML]: Emenda sem id_lexml definido.")
             return xml_string
 
         try:
             tree = etree.fromstring(xml_string.encode("utf-8"), parser=self.parser)
 
-            # Busca o elemento alvo por ID em qualquer nível da árvore
-            elementos_alvo = tree.xpath(f"//*[@id='{change.id_lexml}']", namespaces=self.ns)
-            if not elementos_alvo:
-                elementos_alvo = tree.xpath(f"//*[@id='{change.id_lexml}']")
-
+            # Busca o elemento alvo por ID em qualquer nível da árvore (com parâmetro seguro)
+            elementos_alvo = tree.xpath("//*[@id=$target_id]", target_id=change.id_lexml)
             if not elementos_alvo:
                 print(f"Aviso [Baseline XML]: Elemento com id '{change.id_lexml}' não encontrado.")
                 return xml_string
 
             alvo = elementos_alvo[0]
             pai = alvo.getparent()
+            if pai is None:
+                print(f"Aviso [Baseline XML]: Elemento '{change.id_lexml}' não possui nó pai.")
+                return xml_string
+
             tag_alvo = etree.QName(alvo).localname
 
             # 1. Supressão
             if change.tipo == TipoMudancaEmenda.SUPRESSIVA:
-                if pai is not None:
-                    pai.remove(alvo)
-                    print(f"Sucesso [Baseline]: Dispositivo {tag_alvo} ({change.id_lexml}) suprimido.")
+                pai.remove(alvo)
+                print(f"Sucesso [Baseline]: Dispositivo {tag_alvo} ({change.id_lexml}) suprimido.")
 
-            # 2. Modificação ou Adição (usando change.xml já gerado pelo parse_articulacao)
+            # 2. Modificação ou Adição
             else:
-                if not change.xml:
-                    print(f"Aviso [Baseline XML]: change.xml vazio para {change.id_lexml}.")
+                if not change.paragrafos_xhtml:
+                    print(f"Aviso [Baseline XML]: paragrafos_xhtml vazio para {change.id_lexml}.")
                     return xml_string
 
-                articulacao_fragmento = etree.fromstring(change.xml.encode("utf-8"), parser=self.parser)
+                change_xml = self.lexml_parser.parse_articulacao(change.paragrafos_xhtml)
+                if not change_xml or not change_xml.strip():
+                    print(f"Aviso [Baseline XML]: parse_articulacao retornou vazio para {change.id_lexml}.")
+                    return xml_string
+
+                articulacao_fragmento = etree.fromstring(change_xml.encode("utf-8"), parser=self.parser)
                 novos_nos = list(articulacao_fragmento)
 
                 if not novos_nos:
-                    print(f"Aviso [Baseline XML]: Nenhum nó encontrado em change.xml para {change.id_lexml}.")
+                    print(f"Aviso [Baseline XML]: Nenhum nó encontrado no fragmento XML para {change.id_lexml}.")
                     return xml_string
 
-                # Se o pai do alvo não for <Articulacao> (ou seja, é um sub-dispositivo dentro de um Artigo/Caput/Parágrafo),
-                # prefixa os IDs do fragmento com o ID do pai para manter a hierarquia (ex: 'art6_cpt' + 'inc6' -> 'art6_cpt_inc6')
-                id_pai = pai.get("id") if pai is not None else None
+                # Se o pai do alvo não for <Articulacao>, prefixa os IDs do fragmento com o ID do pai
+                # (ex: 'art6_cpt' + 'inc6' -> 'art6_cpt_inc6')
+                id_pai = pai.get("id")
                 if id_pai:
                     for no in novos_nos:
                         self._prefixar_ids_fragmento(no, id_pai)
@@ -118,7 +141,10 @@ class BaselineManager:
                         ref.addnext(novo_no)
                         ref = novo_no
 
-                print(f"Sucesso [Baseline]: Dispositivo {tag_alvo} ({change.id_lexml}) atualizado ({change.tipo.value}).")
+                print(
+                    f"Sucesso [Baseline]: Dispositivo {tag_alvo} ({change.id_lexml}) "
+                    f"atualizado ({change.tipo.value})."
+                )
 
             return etree.tostring(
                 tree,

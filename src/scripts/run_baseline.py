@@ -1,5 +1,5 @@
 import pandas as pd
-from experiments.llm import LLMClient, FakeLLMClient
+from experiments.llm import FakeLLMClient
 from experiments.ingestion import FileDownloader, TextExtractor
 from experiments.baseline.manager import BaselineManager
 from models import Proposicao, Emenda, Relatorio, StatusEmenda
@@ -74,11 +74,8 @@ if __name__ == "__main__":
             changes = {}
             txt = xml_txt_inicial
             for emenda in emendas_para_aplicar:
-                changes[emenda.id] = baseline_manager.get_changes(emenda, xml_txt_inicial)
+                changes[emenda.id] = baseline_manager.get_changes(emenda, txt)
                 for change in changes[emenda.id]:
-                    if change.paragrafos_xhtml:
-                        change.xml = lexml_parser.parse_articulacao(change.paragrafos_xhtml)
-
                     txt = baseline_manager.apply_amendment_change(change, txt)
 
             
@@ -88,7 +85,7 @@ if __name__ == "__main__":
             tree = etree.fromstring(txt.strip().encode("utf-8"), parser=parser)
 
             etree.ElementTree(tree).write(
-                "../data/lexml/out.xml",
+                "../data/lexml/out_1.xml",
                 encoding="utf-8",
                 xml_declaration=True,
                 pretty_print=True,
@@ -101,7 +98,7 @@ if __name__ == "__main__":
             tree = etree.fromstring(xml_txt_final.strip().encode("utf-8"), parser=parser)
 
             etree.ElementTree(tree).write(
-                "../data/lexml/out_ref.xml",
+                "../data/lexml/out_ref_1.xml",
                 encoding="utf-8",
                 xml_declaration=True,
                 pretty_print=True,

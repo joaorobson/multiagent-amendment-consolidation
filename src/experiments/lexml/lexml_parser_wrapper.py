@@ -46,19 +46,27 @@ class LexMLParserWrapper:
 
         return ET.tostring(root, encoding="unicode")
 
-    def _executar(self, args: List[str]) -> subprocess.CompletedProcess:
+    def _executar(self, args: List[str], timeout: int = 60) -> subprocess.CompletedProcess:
         """Método interno para executar o comando via subprocess."""
         comando = [self.java_path, "-Dfile.encoding=UTF-8", "-jar", self.jar_path] + args
         try:
             return subprocess.run(
                 comando,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
                 check=False,
+                timeout=timeout,
             )
+        except subprocess.TimeoutExpired as e:
+            stdout = e.stdout.decode("utf-8", errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            stderr = e.stderr.decode("utf-8", errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+            raise TimeoutError(
+                f"LexML Parser excedeu {timeout}s.\nSTDOUT:\n{stdout[-1000:]}\nSTDERR:\n{stderr[-1000:]}"
+            ) from e
         except Exception as e:
             raise RuntimeError(f"Erro ao executar o comando Java: {e}")
 

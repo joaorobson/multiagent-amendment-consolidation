@@ -1,4 +1,5 @@
-from .client import LLMClient
+from .openai_client import OpenAIClient
 from .fake_client import FakeLLMClient
+from .base import BaseLLMClient
 
-__all__ = ["LLMClient", "FakeLLMClient"]
+__all__ = ["OpenAIClient", "FakeLLMClient", "BaseLLMClient"]
