@@ -1,14 +1,16 @@
 import pandas as pd
-from experiments.llm import FakeLLMClient
+from experiments.llm import FakeLLMClient, OpenAIClient
 from experiments.ingestion import FileDownloader, TextExtractor
 from experiments.baseline.manager import BaselineManager
 from models import Proposicao, Emenda, Relatorio, StatusEmenda
 from experiments.utils.datasets import get_pages_with_substitutive
+from experiments.utils import SQLiteLLMCache
 import numpy as np
 from experiments.utils import SimilarityRanker
-from experiments.eval import EvaluationPipeline, BERTScoreEvaluator, XMLEvaluator
+from experiments.eval import EvaluationPipeline, BERTScoreEvaluator, XMLEvaluator, LLMAsAJudgeEvaluator
 from experiments.lexml.lexml_parser_wrapper import LexMLParserWrapper
 from lxml import etree
+import os
 
 normas = pd.read_parquet("../data/datasets/fake/normas.parquet")
 proposicoes = pd.read_parquet("../data/datasets/fake/proposicoes.parquet")
@@ -19,12 +21,14 @@ paginas_com_substitutivo = pd.read_csv("../data/datasets/paginas_com_substitutiv
 dict_paginas = {} #get_pages_with_substitutive(paginas_com_substitutivo)
 
 llm_client = FakeLLMClient(responses={})
-baseline_manager = BaselineManager(llm_client, None, None)
+client = OpenAIClient(api_key=os.environ["OPENAI_API_KEY"], model="gpt-6-luna")
+
 downloader = FileDownloader("../data/pdfs")
 text_extractor = TextExtractor("../data/pdfs", "../data/txts")
 sim_ranker = SimilarityRanker(None)
 lexml_parser = LexMLParserWrapper(jar_path="../data/lexml/lexml-parser-projeto-lei-1.15.8-SNAPSHOT-onejar.jar", java_path="java")
-evaluation_pipeline = EvaluationPipeline(lexml_parser, [BERTScoreEvaluator(lexml_parser, "BERTScore"), XMLEvaluator("xmldiff")])
+baseline_manager = BaselineManager(client, lexml_parser)
+evaluation_pipeline = EvaluationPipeline(lexml_parser, [BERTScoreEvaluator(lexml_parser, "BERTScore"), XMLEvaluator("xmldiff"), LLMAsAJudgeEvaluator("LLM-as-a-judge", client)])
 APPLY_RANKING = False
 APPLY_PREPROCESSING = False
 
@@ -63,38 +67,31 @@ if __name__ == "__main__":
             print(emendas_para_aplicar)
 
             for emenda in emendas_para_aplicar:
-                ...
                 #downloader.download(emenda.url_doc, f"emenda-{emenda.id}.pdf")
-                #emenda.texto = text_extractor.extract_text(f"emenda-{emenda.id}.pdf")
+                emenda.texto = text_extractor.extract_text(f"emenda-{emenda.id}.pdf")
 
             if APPLY_RANKING:
                 first_emenda_id = sorted(emendas_para_aplicar, key=lambda e: e.id)[0].id
                 emendas_para_aplicar = sim_ranker.rank_by_similarity({e.id: e.texto for e in emendas_para_aplicar}, first_emenda_id)
             
-            changes = {}
             txt = xml_txt_inicial
             for emenda in emendas_para_aplicar:
-                changes[emenda.id] = baseline_manager.get_changes(emenda, txt)
-                for change in changes[emenda.id]:
+                changes = baseline_manager.get_changes(emenda, txt)
+                print(f"Mudanças idenficadas para emenda {emenda.id}: {changes}")
+                for change in changes:
                     txt = baseline_manager.apply_amendment_change(change, txt)
 
-            
-            print("texto gerado")
-            print(txt)
+
             parser = etree.XMLParser(remove_blank_text=True, encoding="utf-8")
             tree = etree.fromstring(txt.strip().encode("utf-8"), parser=parser)
 
             etree.ElementTree(tree).write(
-                "../data/lexml/out_1.xml",
+                "../data/lexml/out_openai.xml",
                 encoding="utf-8",
                 xml_declaration=True,
                 pretty_print=True,
             )
 
-            print("="*100)
-
-            print("texto final")
-            print(xml_txt_final)
             tree = etree.fromstring(xml_txt_final.strip().encode("utf-8"), parser=parser)
 
             etree.ElementTree(tree).write(

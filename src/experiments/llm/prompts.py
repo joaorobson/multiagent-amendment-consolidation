@@ -53,7 +53,17 @@ Sua tarefa é analisar o XML LexML de uma proposição (texto inicial) e o texto
 
 ### Regras Obrigatórias para `id_lexml` e `paragrafos_xhtml`
 - **Nunca invente `id_lexml`:** copie exatamente um atributo `id="..."` que exista no XML fornecido.
-- **Um dispositivo por string:** cada item de `paragrafos_xhtml` deve representar um único parágrafo/dispositivo, iniciado pelo seu rótulo legislativo (`Art. 4º-A.`, `§ 1º`, `Parágrafo único.`, `I –`, `a)`).
+- **Um dispositivo por item da lista (PROIBIDO usar `\n`):** cada string em `paragrafos_xhtml` deve conter **apenas um único** dispositivo (um artigo/caput, um parágrafo, um inciso, uma alínea ou um item) iniciado pelo seu rótulo legislativo (`Art. 4º-A.`, `§ 1º`, `Parágrafo único.`, `I –`, `a)`). **NUNCA** junte vários dispositivos na mesma string separados por quebra de linha (`\n`).
+  - **Errado:** `["Art. 9º-A. Texto...\n§ 1º Texto...\nI – item 1;\nII – item 2."]`
+  - **Correto:**
+    ```json
+    [
+      "Art. 9º-A. Texto...",
+      "§ 1º Texto...",
+      "I – item 1;",
+      "II – item 2."
+    ]
+    ```
 - **Apenas texto normativo puro:** remova comandos de emenda (ex.: *"Acrescente-se onde couber..."*, *"Dê-se ao art. X a seguinte redação:"*), aspas externas da emenda, assinaturas e a seção de *"Justificação"*.
 - **Sem tags XML/HTML:** entregue apenas texto plano limpo em `paragrafos_xhtml`.
 - **Aprovação parcial:** se for fornecida uma deliberação indicando aprovação parcial, aplique **somente** os trechos efetivamente acolhidos pelo relator, descartando os trechos rejeitados.

@@ -1,4 +1,4 @@
-from models import StatusEmenda, MudancaEmenda, TipoMudancaEmenda, DeliberacaoEmenda
+from models import StatusEmenda, MudancaEmenda, TipoMudancaEmenda, DeliberacaoEmenda, DeliberacoesEmenda, MudancasEmenda
 from .prompts import SYSTEM_PROMPT_APLICACAO_EMENDAS, SYSTEM_PROMPT_EXTRACAO_EMENDAS_RELATORIO
 from .base import BaseLLMClient
 from typing import Optional, Type, T, Any
@@ -17,7 +17,7 @@ class FakeLLMClient(BaseLLMClient):
     ) -> Any:
         self.call_count += 1
         if system_prompt == SYSTEM_PROMPT_EXTRACAO_EMENDAS_RELATORIO:
-            return [
+            return DeliberacoesEmenda(deliberacoes=[
                 DeliberacaoEmenda(
                     id_emenda=1,
                     status=StatusEmenda.APROVADA_PARCIALMENTE,
@@ -43,24 +43,27 @@ class FakeLLMClient(BaseLLMClient):
                     status=StatusEmenda.APROVADA,
                     justificativa="A divulgação de informações sobre projetos, recursos e execução fortalece a transparência, o controle social e a eficiência administrativa.",
                 ),
-            ]
+            ])
 
         elif system_prompt == SYSTEM_PROMPT_APLICACAO_EMENDAS:
-            return {
-                1: [
-                    MudancaEmenda(
-                        tipo=TipoMudancaEmenda.ADITIVA,
-                        id_lexml="art4",  # ID do dispositivo de referência após o qual o Art. 4º-A será inserido
-                        paragrafos_xhtml=[
-                            "Art. 4º-A. Os projetos de modernização apoiados pelo Programa deverão contemplar medidas destinadas a garantir condições adequadas de acessibilidade às pessoas com deficiência ou mobilidade reduzida.",
-                            "§ 1º As intervenções deverão observar, conforme a natureza e as características do equipamento público:",
-                            "I – implantação ou adequação de rotas acessíveis nas áreas de circulação; e",
-                            "II – instalação de sinalização adequada para orientação e identificação dos espaços.",
-                            "§ 2º As medidas previstas neste artigo deverão ser consideradas na elaboração do plano de trabalho apresentado pelo ente federativo participante.",
-                        ],
-                    )
-                ],
-                3: [
+            if user_prompt == "1":
+                return MudancasEmenda(
+                    mudancas=[
+                        MudancaEmenda(
+                            tipo=TipoMudancaEmenda.ADITIVA,
+                            id_lexml="art4",  # ID do dispositivo de referência após o qual o Art. 4º-A será inserido
+                            paragrafos_xhtml=[
+                                "Art. 4º-A. Os projetos de modernização apoiados pelo Programa deverão contemplar medidas destinadas a garantir condições adequadas de acessibilidade às pessoas com deficiência ou mobilidade reduzida.",
+                                "§ 1º As intervenções deverão observar, conforme a natureza e as características do equipamento público:",
+                                "I – implantação ou adequação de rotas acessíveis nas áreas de circulação; e",
+                                "II – instalação de sinalização adequada para orientação e identificação dos espaços.",
+                                "§ 2º As medidas previstas neste artigo deverão ser consideradas na elaboração do plano de trabalho apresentado pelo ente federativo participante.",
+                            ],
+                        )
+                    ])
+            elif user_prompt == "3":
+                return MudancasEmenda(
+                    mudancas=[
                     MudancaEmenda(
                         tipo=TipoMudancaEmenda.MODIFICATIVA,
                         id_lexml="art6_cpt_inc5",
@@ -75,23 +78,25 @@ class FakeLLMClient(BaseLLMClient):
                             "Parágrafo único. Na aplicação do critério previsto no inciso VI, deverão ser considerados, entre outros fatores, o porte populacional do Município, os indicadores sociais e econômicos disponíveis e a necessidade de recuperação da infraestrutura dos equipamentos públicos abrangidos pelo Programa.",
                         ],
                     ),
-                ],
-                5: [
-                    MudancaEmenda(
-                        tipo=TipoMudancaEmenda.ADITIVA,
-                        id_lexml="art9",  # ID do dispositivo de referência após o qual o Art. 9º-A será inserido
-                        paragrafos_xhtml=[
-                            "Art. 9º-A. O órgão federal responsável pela coordenação do Programa deverá assegurar a transparência e a publicidade das informações relativas aos projetos apoiados.",
-                            "§ 1º Deverão ser disponibilizadas, em meio eletrônico de acesso público, no mínimo, as seguintes informações:",
-                            "I – identificação dos entes federativos e dos equipamentos públicos beneficiados;",
-                            "II – descrição dos projetos selecionados;",
-                            "III – valores dos recursos destinados a cada projeto;",
-                            "IV – cronogramas previstos para execução das ações;",
-                            "V – estágio de execução física e financeira dos projetos; e",
-                            "VI – resultados alcançados com a implementação das intervenções.",
-                            "§ 2º As informações de que trata o § 1º deverão ser atualizadas periodicamente, conforme periodicidade definida em regulamento.",
-                            "§ 3º O órgão coordenador deverá elaborar e divulgar relatório anual consolidado sobre a execução do Programa, contendo informações sobre os recursos aplicados, os projetos concluídos e os resultados obtidos.",
-                        ],
-                    )
-                ]
-            }
+                    ])
+            elif user_prompt == "5":
+                 return MudancasEmenda(
+                    mudancas=[
+                        MudancaEmenda(
+                            tipo=TipoMudancaEmenda.ADITIVA,
+                            id_lexml="art9",  # ID do dispositivo de referência após o qual o Art. 9º-A será inserido
+                            paragrafos_xhtml=[
+                                "Art. 9º-A. O órgão federal responsável pela coordenação do Programa deverá assegurar a transparência e a publicidade das informações relativas aos projetos apoiados.",
+                                "§ 1º Deverão ser disponibilizadas, em meio eletrônico de acesso público, no mínimo, as seguintes informações:",
+                                "I – identificação dos entes federativos e dos equipamentos públicos beneficiados;",
+                                "II – descrição dos projetos selecionados;",
+                                "III – valores dos recursos destinados a cada projeto;",
+                                "IV – cronogramas previstos para execução das ações;",
+                                "V – estágio de execução física e financeira dos projetos; e",
+                                "VI – resultados alcançados com a implementação das intervenções.",
+                                "§ 2º As informações de que trata o § 1º deverão ser atualizadas periodicamente, conforme periodicidade definida em regulamento.",
+                                "§ 3º O órgão coordenador deverá elaborar e divulgar relatório anual consolidado sobre a execução do Programa, contendo informações sobre os recursos aplicados, os projetos concluídos e os resultados obtidos.",
+                            ]
+                        )
+                    ]
+                 )

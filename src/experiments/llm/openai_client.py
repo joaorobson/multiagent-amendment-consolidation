@@ -2,7 +2,7 @@
 from openai import OpenAI
 from typing import Any, Optional, Type, TypeVar
 from pydantic import BaseModel
-
+from experiments.utils import SQLiteLLMCache
 from .base import BaseLLMClient
 
 T = TypeVar("T", bound=BaseModel)
@@ -21,11 +21,13 @@ class OpenAIClient(BaseLLMClient):
         base_url: Optional[str] = None,
         temperature: float = 0.0,
         seed: int = 42,
+        cache: SQLiteLLMCache | None = None,
     ):
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
         self.temperature = temperature
         self.seed = seed
+        self.cache = cache
 
         self.call_count = 0
         self.total_prompt_tokens = 0
@@ -36,7 +38,21 @@ class OpenAIClient(BaseLLMClient):
         system_prompt: str,
         user_prompt: str,
         response_format: Optional[Type[T]] = None,
-    ) -> Any:
+    ) -> T | str:
+        cache_key = None
+        if self.cache is not None:
+            cache_key = self.cache.build_key(
+                model=self.model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                response_format=response_format,
+                temperature=self.temperature,
+                seed=self.seed,
+            )
+            cached = self.cache.get(cache_key, response_format)
+            if cached is not None:
+                print("Retornando resultado do cache")
+                return cached
 
         self.call_count += 1
 
@@ -67,9 +83,18 @@ class OpenAIClient(BaseLLMClient):
             raise ValueError(f"Model refusal: {message.refusal}")
 
         if response_format is not None:
-            return message.parsed
+            if message.parsed is None:
+                raise ValueError("O modelo não retornou uma resposta estruturada válida.")
+            result: T | str = message.parsed
+        else:
+            if message.content is None:
+                raise ValueError("O modelo retornou conteúdo vazio.")
+            result = message.content
 
-        return message.content
+        if self.cache is not None and cache_key is not None:
+            self.cache.set(cache_key, self.model, result)
+
+        return result
 
     def _registrar_tokens(self, completion: Any) -> None:
         if completion.usage:

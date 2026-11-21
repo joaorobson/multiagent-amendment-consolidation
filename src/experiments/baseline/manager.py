@@ -6,11 +6,10 @@ from experiments.llm.prompts import SYSTEM_PROMPT_APLICACAO_EMENDAS, SYSTEM_PROM
 from lxml import etree
 
 class BaselineManager:
-    def __init__(self, llm_client, downloader, text_extractor):
+    def __init__(self, llm_client, lexml_parser):
         self.llm_client = llm_client
-        self.downloader = downloader
-        self.text_extractor = text_extractor
-        self.parser = etree.XMLParser(remove_blank_text=True, encoding="utf-8")
+        self.xml_parser = etree.XMLParser(remove_blank_text=True, encoding="utf-8")
+        self.lexml_parser = lexml_parser
         self.ns = {"lex": "http://www.lexml.gov.br/1.0"}
 
     def get_amendments_status(self, report_text) -> Dict[int, DeliberacaoEmenda]:
@@ -19,8 +18,8 @@ class BaselineManager:
         <relatorio>
         {report_text}
         </relatorio>"""
-        status_emendas = self.llm_client.call(SYSTEM_PROMPT_EXTRACAO_EMENDAS_RELATORIO, user_prompt, response_format=DeliberacoesEmenda)
-        return {em.id_emenda: em for em in status_emendas}
+        deliberacoes = self.llm_client.call(SYSTEM_PROMPT_EXTRACAO_EMENDAS_RELATORIO, user_prompt, response_format=DeliberacoesEmenda)
+        return {em.id_emenda: em for em in deliberacoes.deliberacoes}
 
     def update_amendments_status(self, amendments: Dict[int, Emenda], extracted_status: Dict[int, DeliberacaoEmenda]):
         for amendment_id, deliberacao in extracted_status.items():
@@ -42,8 +41,8 @@ class BaselineManager:
         {emenda.deliberacao.justificativa if emenda.deliberacao.status == StatusEmenda.APROVADA_PARCIALMENTE else "Aprovada integralmente"}
         </deliberacao>
         """
-        changes = self.llm_client.call(SYSTEM_PROMPT_APLICACAO_EMENDAS, user_prompt, response_format=MudancasEmenda)
-        return changes.get(emenda.id, [])
+        mudancas = self.llm_client.call(SYSTEM_PROMPT_APLICACAO_EMENDAS, user_prompt, response_format=MudancasEmenda)
+        return mudancas.mudancas
 
     def _normalizar_bloco(self, texto: str) -> str:
         """
@@ -83,7 +82,7 @@ class BaselineManager:
             return xml_string
 
         try:
-            tree = etree.fromstring(xml_string.encode("utf-8"), parser=self.parser)
+            tree = etree.fromstring(xml_string.encode("utf-8"), parser=self.xml_parser)
 
             # Busca o elemento alvo por ID em qualquer nível da árvore (com parâmetro seguro)
             elementos_alvo = tree.xpath("//*[@id=$target_id]", target_id=change.id_lexml)
@@ -115,7 +114,7 @@ class BaselineManager:
                     print(f"Aviso [Baseline XML]: parse_articulacao retornou vazio para {change.id_lexml}.")
                     return xml_string
 
-                articulacao_fragmento = etree.fromstring(change_xml.encode("utf-8"), parser=self.parser)
+                articulacao_fragmento = etree.fromstring(change_xml.encode("utf-8"), parser=self.xml_parser)
                 novos_nos = list(articulacao_fragmento)
 
                 if not novos_nos:
